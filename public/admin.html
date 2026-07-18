@@ -6,7 +6,7 @@
 <title>GlucoReg — Admin</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/style.css?v=5">
+<link rel="stylesheet" href="/style.css?v=6">
 <link rel="apple-touch-icon" href="/icon.svg">
 </head>
 <body>
@@ -217,7 +217,10 @@ async function loadAdmin() {
     document.getElementById('admin-loading').style.display = 'none';
     usersData = data.users;
     document.getElementById('admin-content').innerHTML = `
-      <div class="section-title">Usuarios (${usersData.length})</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div class="section-title" style="margin:0">Usuarios (${usersData.length})</div>
+        <button class="btn btn-outline" onclick="sendReportToAll()" style="width:auto;padding:8px 14px;font-size:.8rem">📊 Enviar resumen a todos</button>
+      </div>
       ${usersData.map(u => `
         <div class="admin-user-card">
           <div class="avatar">${u.role === 'admin' ? '👑' : '👤'}</div>
@@ -235,15 +238,48 @@ async function loadAdmin() {
               <span>📅 ${u.created_at ? u.created_at.slice(0,10) : '—'}</span>
             </div>
           </div>
-          ${u.username !== username ? `
           <div class="actions">
-            <button onclick='openEdit(${JSON.stringify(u).replace(/'/g,"&#39;")})'>✏️ Editar</button>
-            <button class="danger-btn" onclick="deleteUser(${u.id},'${u.username}')">🗑️</button>
-          </div>` : ''}
+            ${u.phone ? `<button onclick="sendReportToUser(${u.id},'${u.username}')" title="Enviar resumen semanal">📊</button>` : ''}
+            ${u.username !== username ? `
+            <button onclick='openEdit(${JSON.stringify(u).replace(/'/g,"&#39;")})'>✏️</button>
+            <button class="danger-btn" onclick="deleteUser(${u.id},'${u.username}')">🗑️</button>` : ''}
+          </div>
         </div>
       `).join('')}
     `;
   } catch(e) { document.getElementById('admin-loading').textContent = 'Error de conexión'; }
+}
+
+async function sendReportToAll() {
+  if (!confirm('¿Enviar resumen semanal a TODOS los usuarios con WhatsApp?')) return;
+  const btn = document.querySelector('.section-title + button');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>'; }
+  try {
+    const res = await fetch(API + '/admin/report', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error); return; }
+    showToast(data.message, data.failed > 0 ? 'error' : 'success');
+  } catch(e) { showError('Error'); }
+  if (btn) { btn.disabled = false; btn.textContent = '📊 Enviar resumen a todos'; }
+}
+
+async function sendReportToUser(id, uname) {
+  const ok = await showConfirm('📊 Enviar resumen',
+    `<p>¿Enviar resumen semanal a <strong>${uname}</strong>?</p>`
+  );
+  if (!ok) return;
+  try {
+    const res = await fetch(API + '/admin/report', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body: JSON.stringify({ user_id: id }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error); return; }
+    showToast(data.message, data.ok ? 'success' : 'error');
+  } catch(e) { showError('Error'); }
 }
 
 function initBroadcast() {

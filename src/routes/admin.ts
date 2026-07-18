@@ -4,6 +4,7 @@ import { getDb } from '../db/client';
 import { authMiddleware, getUser } from '../middleware/auth';
 import { sendWhatsApp } from '../lib/waha';
 import { auditLog, ensureLogTable } from '../lib/logger';
+import { buildWeeklyReport, sendWeeklyReportToAll } from '../lib/report';
 
 type Bindings = { DB: D1Database; WAHA_API_KEY: string; WAHA_BASE_URL?: string };
 
@@ -131,6 +132,42 @@ admin.post('/broadcast', async (c) => {
     delay_ms: baseDelay,
     errors: firstErrors,
     totalErrors: errors.length,
+  });
+});
+
+admin.post('/report', async (c) => {
+  if (!(await checkAdmin(c))) return;
+  const db = getDb(c.env);
+  const user = getUser(c);
+  const { user_id } = await c.req.json<{ user_id?: number | null }>();
+
+  if (user_id) {
+    const target = await db.prepare('SELECT id, username, phone FROM users WHERE id = ?').bind(user_id).first<{ id: number; username: string; phone: string }>();
+    if (!target) return c.json({ error: 'Usuario no encontrado', code: 404 }, 404);
+    if (!target.phone) return c.json({ error: 'El usuario no tiene WhatsApp configurado', code: 400 }, 400);
+
+    const msg = await buildWeeklyReport(db, target.id, target.username);
+    const result = await sendWhatsApp(c.env, target.phone, msg);
+    await auditLog(db, user.sub, user.username, 'admin.report.single', `Resumen enviado a ${target.username} (${target.phone}): ${result.ok ? 'ok' : 'falló: ' + (result.error || '')}`);
+
+    return c.json({
+      message: result.ok ? `✓ Resumen enviado a ${target.username}` : `✗ Error: ${result.error || 'desconocido'}`,
+      ok: result.ok,
+      error: result.error,
+    });
+  }
+
+  const result = await sendWeeklyReportToAll(db, c.env, 10000);
+  await auditLog(db, user.sub, user.username, 'admin.report.all',
+    `Resumen semanal enviado a ${result.sent + result.failed} usuario(s): ${result.sent} enviados, ${result.failed} fallidos${result.errors.length > 0 ? ' | Errores: ' + result.errors.slice(0, 5).join(' | ') : ''}`
+  );
+
+  return c.json({
+    message: `Resumen enviado: ${result.sent} enviados, ${result.failed} fallidos`,
+    sent: result.sent,
+    failed: result.failed,
+    errors: result.errors.slice(0, 3),
+    totalErrors: result.errors.length,
   });
 });
 
