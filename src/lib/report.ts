@@ -31,19 +31,25 @@ export async function buildWeeklyReport(
       WHERE user_id = ? AND recorded_at >= ?
     `).bind(userId, weekAgo).first<{ days: number }>(),
 
-    db.prepare(`
-      WITH dates AS (
-        SELECT date(recorded_at) as d FROM readings WHERE user_id = ?
-        UNION SELECT date(recorded_at) FROM blood_pressure WHERE user_id = ?
-      )
-      SELECT COUNT(*) as streak FROM dates WHERE d >= date('now', '-' || (
-        SELECT min(d) FROM (
-          SELECT julianday('now') - julianday(d) - row_number() OVER (ORDER BY d DESC) as gap
-          FROM (SELECT DISTINCT date(recorded_at) as d FROM readings WHERE user_id = ?
-            UNION SELECT DISTINCT date(recorded_at) FROM blood_pressure WHERE user_id = ?)
-        ) WHERE gap = 0
-      ) || ' days')
-    `).bind(userId, userId, userId, userId).first<{ streak: number }>(),
+    (async () => {
+      try {
+        const rows = await db.prepare(`
+          SELECT DISTINCT date(recorded_at) as d FROM readings WHERE user_id = ? AND recorded_at >= date('now', '-30 days')
+          UNION SELECT DISTINCT date(recorded_at) FROM blood_pressure WHERE user_id = ? AND recorded_at >= date('now', '-30 days')
+          ORDER BY d DESC
+        `).bind(userId, userId).all<{ d: string }>();
+        let streak = 0;
+        const today = new Date().toISOString().slice(0, 10);
+        for (let i = 0; i < rows.results.length; i++) {
+          const expected = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+          if (rows.results[i].d === expected) streak++;
+          else break;
+        }
+        return { streak };
+      } catch {
+        return { streak: 0 };
+      }
+    })(),
   ]);
 
   const glucDays = glucoseDays?.days || 0;

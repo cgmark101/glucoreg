@@ -262,7 +262,7 @@ async function sendReportToAll() {
     const data = await res.json();
     if (!res.ok) { showError(data.error); return; }
     showToast(data.message, data.failed > 0 ? 'error' : 'success');
-  } catch(e) { showError('Error'); }
+  } catch(e) { showError('Error de conexión'); }
   if (btn) { btn.disabled = false; btn.textContent = '📊 Enviar resumen a todos'; }
 }
 
@@ -277,7 +277,7 @@ async function sendReportToUser(id, uname) {
       body: JSON.stringify({ user_id: id }),
     });
     const data = await res.json();
-    if (!res.ok) { showError(data.error); return; }
+    if (!res.ok) { showError(data.error || 'Error ' + res.status); return; }
     showToast(data.message, data.ok ? 'success' : 'error');
   } catch(e) { showError('Error'); }
 }
