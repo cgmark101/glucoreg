@@ -52,7 +52,7 @@
   </div>
 </div>
 
-<!-- Modal -->
+<!-- Edit Modal -->
 <div class="modal-overlay" id="modal">
   <div class="modal-box">
     <h3 id="modal-title">Editar usuario</h3>
@@ -60,6 +60,18 @@
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" id="modal-save" onclick="saveUser()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Modal -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal-box">
+    <h3 id="confirm-title">Confirmar</h3>
+    <div id="confirm-body" style="font-size:.9rem;color:var(--muted);line-height:1.5"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeConfirm(false)" id="confirm-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="confirm-ok" onclick="closeConfirm(true)" style="background:var(--danger)">Enviar</button>
     </div>
   </div>
 </div>
@@ -89,7 +101,23 @@ async function switchSection(section) {
   if (section === 'logs') loadLogs(0);
 }
 
+let confirmResolve = null;
+
 function closeModal() { document.getElementById('modal').classList.remove('show'); }
+
+function showConfirm(title, body) {
+  return new Promise(resolve => {
+    confirmResolve = resolve;
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-body').innerHTML = body;
+    document.getElementById('confirm-modal').classList.add('show');
+  });
+}
+
+function closeConfirm(ok) {
+  document.getElementById('confirm-modal').classList.remove('show');
+  if (confirmResolve) { confirmResolve(ok); confirmResolve = null; }
+}
 
 function openEdit(user) {
   editingUser = user;
@@ -302,7 +330,15 @@ async function sendBroadcast() {
   if (!msg) { showError('Escribí un mensaje'); return; }
   const delayMs = parseInt(document.getElementById('broadcast-delay').value) || 3000;
   const totalUsers = usersData.filter(u => u.phone).length;
-  if (!confirm(`¿Enviar a ${totalUsers} usuario(s) con ${delayMs}ms de delay (~${Math.ceil(totalUsers * delayMs / 1000)}s total)? WhatsApp puede bloquear el número si el envío es muy rápido.`)) return;
+  const totalTime = Math.ceil(totalUsers * delayMs / 1000);
+  const ok = await showConfirm('📢 Enviar Broadcast',
+    `<p>¿Enviar mensaje a <strong>${totalUsers} usuario(s)</strong>?</p>
+     <p style="margin-top:8px">Delay: ${delayMs}ms · Tiempo estimado: ~${totalTime}s</p>
+     <p style="margin-top:12px;padding:10px;border-radius:8px;background:rgba(244,63,94,.1);color:var(--danger);font-size:.8rem">
+     ⚠️ WhatsApp puede bloquear el número si el envío es muy rápido o a muchos contactos.
+     </p>`
+  );
+  if (!ok) return;
   const btn = document.getElementById('broadcast-btn');
   const status = document.getElementById('broadcast-status');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
