@@ -6,7 +6,7 @@
 <title>GlucoReg — Admin</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/style.css?v=3">
+<link rel="stylesheet" href="/style.css?v=4">
 <link rel="apple-touch-icon" href="/icon.svg">
 </head>
 <body>
@@ -216,10 +216,17 @@ function initBroadcast() {
       <div class="broadcast-info">
         Enviar mensaje a <strong>${phoneUsers.length} usuario(s)</strong> con WhatsApp configurado.
       </div>
-      <div class="form-group" style="max-width:200px">
+      <div class="admin-card" style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3);margin-bottom:16px">
+        <p style="font-size:.85rem;color:#fbbf24">
+        ⚠️ WhatsApp detecta envíos masivos como uso automatizado y puede bloquear el número.
+        Usá delays altos (3-10s), no mandes a más de 20-30 personas seguidas,
+        y espaciá los broadcasts por horas.
+        </p>
+      </div>
+      <div class="form-group" style="max-width:220px">
         <label>Delay entre mensajes</label>
         <div style="display:flex;gap:8px;align-items:center">
-          <input type="number" id="broadcast-delay" value="500" min="0" max="10000" step="100">
+          <input type="number" id="broadcast-delay" value="3000" min="1000" max="30000" step="500">
           <span style="color:var(--muted);font-size:.85rem">ms</span>
         </div>
       </div>
@@ -233,7 +240,8 @@ function initBroadcast() {
 async function sendBroadcast() {
   const msg = document.getElementById('broadcast-msg').value.trim();
   if (!msg) { showError('Escribí un mensaje'); return; }
-  if (!confirm('¿Enviar este mensaje a todos los usuarios con WhatsApp?')) return;
+  const totalUsers = usersData.filter(u => u.phone).length;
+  if (!confirm(`¿Enviar a ${totalUsers} usuario(s) con ${delayMs}ms de delay (~${Math.ceil(totalUsers * delayMs / 1000)}s total)? WhatsApp puede bloquear el número si el envío es muy rápido.`)) return;
   const btn = document.getElementById('broadcast-btn');
   const status = document.getElementById('broadcast-status');
   const delayMs = parseInt(document.getElementById('broadcast-delay').value) || 500;

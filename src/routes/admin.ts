@@ -80,7 +80,7 @@ admin.post('/broadcast', async (c) => {
   if (!(await checkAdmin(c))) return;
   const db = getDb(c.env);
   const { message, delay_ms } = await c.req.json<{ message: string; delay_ms?: number }>();
-  const delay = Math.max(0, Math.min(10000, delay_ms || 500));
+  const baseDelay = Math.max(1000, Math.min(30000, delay_ms || 3000));
 
   if (!message || typeof message !== 'string' || message.trim().length === 0) {
     return c.json({ error: 'Mensaje requerido', code: 400 }, 400);
@@ -96,8 +96,9 @@ admin.post('/broadcast', async (c) => {
     const u = users.results[i];
     const ok = await sendWhatsApp(c.env, u.phone, message.trim());
     if (ok) sent++; else failed++;
-    if (delay > 0 && i < users.results.length - 1) {
-      await new Promise(r => setTimeout(r, delay));
+    if (i < users.results.length - 1) {
+      const jitter = baseDelay * (0.5 + Math.random() * 0.5);
+      await new Promise(r => setTimeout(r, Math.round(jitter)));
     }
   }
 
@@ -106,6 +107,7 @@ admin.post('/broadcast', async (c) => {
     total: users.results.length,
     sent,
     failed,
+    delay_ms: baseDelay,
   });
 });
 
