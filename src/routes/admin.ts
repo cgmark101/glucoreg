@@ -101,10 +101,15 @@ admin.post('/broadcast', async (c) => {
 
   let sent = 0;
   let failed = 0;
+  const errors: string[] = [];
   for (let i = 0; i < users.results.length; i++) {
     const u = users.results[i];
-    const ok = await sendWhatsApp(c.env, u.phone, message.trim());
-    if (ok) sent++; else failed++;
+    const result = await sendWhatsApp(c.env, u.phone, message.trim());
+    if (result.ok) sent++;
+    else {
+      failed++;
+      errors.push(`${u.username} (${u.phone}): ${result.error || 'desconocido'}`);
+    }
     if (i < users.results.length - 1) {
       const jitter = baseDelay * (0.5 + Math.random() * 0.5);
       await new Promise(r => setTimeout(r, Math.round(jitter)));
@@ -112,16 +117,20 @@ admin.post('/broadcast', async (c) => {
   }
 
   const user = getUser(c);
+  const errorSummary = errors.length > 0 ? ` | Errores: ${errors.slice(0, 5).join(' | ')}${errors.length > 5 ? ` (+${errors.length - 5} más)` : ''}` : '';
   await auditLog(db, user.sub, user.username, 'admin.broadcast',
-    `Broadcast a ${users.results.length} usuario(s): ${sent} enviados, ${failed} fallidos. Delay: ${baseDelay}ms`
+    `Broadcast a ${users.results.length} usuario(s): ${sent} enviados, ${failed} fallidos. Delay: ${baseDelay}ms${errorSummary}`
   );
 
+  const firstErrors = errors.slice(0, 3);
   return c.json({
     message: `Broadcast enviado: ${sent} enviados, ${failed} fallidos`,
     total: users.results.length,
     sent,
     failed,
     delay_ms: baseDelay,
+    errors: firstErrors,
+    totalErrors: errors.length,
   });
 });
 
