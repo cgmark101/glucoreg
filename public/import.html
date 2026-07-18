@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GlucoReg — Importar</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css?v=2">
+<link rel="apple-touch-icon" href="/icon.svg">
+</head>
+<body>
+<div id="page-loader"><div class="spinner"></div><span>Cargando...</span></div>
+<div class="container">
+  <div class="app-header">
+    <h1>GlucoReg</h1>
+    <div class="user-badge">
+      <span id="user-name"></span>
+      <div style="position:relative">
+        <div class="menu-dots" onclick="toggleMenu()">⋯</div>
+        <div class="menu-dropdown" id="menu-dropdown">
+          <button onclick="handleLogout()" style="color:var(--danger)">🚪 Salir</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-bar">
+    <button onclick="navTo('glucose.html')">Glucosa</button>
+    <button onclick="navTo('pressure.html')">Presión</button>
+  </div>
+
+  <div class="add-card">
+    <h2>Importar CSV — Glucosa</h2>
+    <p style="font-size:.8rem;color:var(--muted);margin-bottom:12px">Columnas: fecha, hora, valor, contexto(opcional)</p>
+    <div style="display:flex;gap:8px;align-items:center">
+      <label for="csv-r" style="flex:1;padding:12px 16px;border:1px dashed var(--surface2);border-radius:10px;font-size:.85rem;color:var(--muted);text-align:center;cursor:pointer">Seleccionar archivo</label>
+      <input type="file" id="csv-r" accept=".csv,.txt" style="display:none" onchange="this.previousElementSibling.textContent=this.files[0]?.name||'Seleccionar archivo'">
+      <button class="btn btn-primary" onclick="handleImport('readings')" style="white-space:nowrap">Subir</button>
+    </div>
+  </div>
+
+  <div class="add-card">
+    <h2>Importar CSV — Presión Arterial</h2>
+    <p style="font-size:.8rem;color:var(--muted);margin-bottom:12px">Columnas: fecha, hora, sistólica, diastólica, pulso(opcional), contexto(opcional)</p>
+    <div style="display:flex;gap:8px;align-items:center">
+      <label for="csv-bp" style="flex:1;padding:12px 16px;border:1px dashed var(--surface2);border-radius:10px;font-size:.85rem;color:var(--muted);text-align:center;cursor:pointer">Seleccionar archivo</label>
+      <input type="file" id="csv-bp" accept=".csv,.txt" style="display:none" onchange="this.previousElementSibling.textContent=this.files[0]?.name||'Seleccionar archivo'">
+      <button class="btn btn-primary" onclick="handleImport('bp')" style="white-space:nowrap">Subir</button>
+    </div>
+  </div>
+
+  <div id="import-result" class="success-msg" style="display:none"></div>
+</div>
+
+<div id="toast" class="toast"></div>
+<div id="error-msg" class="error-msg" style="display:none;position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:200;max-width:480px;width:90%"></div>
+
+<script src="/shared.js?v=2"></script>
+<script>
+checkAuth();
+
+async function handleImport(type) {
+  const id = type === 'readings' ? 'csv-r' : 'csv-bp';
+  const endpoint = type === 'readings' ? '/readings/bulk' : '/blood-pressure/bulk';
+  const fileInput = document.getElementById(id);
+  if (!fileInput.files?.[0]) { showError('Seleccioná un archivo CSV'); return; }
+
+  // Find the subir button next to the file input
+  const btn = fileInput.parentElement.querySelector('.btn-primary');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+
+  const fd = new FormData();
+  fd.append('file', fileInput.files[0]);
+  fd.append('tz_offset', String(-new Date().getTimezoneOffset()));
+  try {
+    const res = await fetch(API + endpoint, {
+      method:'POST', headers:{'Authorization':'Bearer '+token}, body:fd
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error); btn.disabled=false; btn.textContent='Subir'; return; }
+    document.getElementById('import-result').textContent = '✓ ' + data.message;
+    document.getElementById('import-result').style.display = 'block';
+    fileInput.value = '';
+    fileInput.previousElementSibling.textContent = 'Seleccionar archivo';
+    setTimeout(() => document.getElementById('import-result').style.display = 'none', 4000);
+  } catch(e) { showError('Error de conexión'); }
+  btn.disabled = false; btn.textContent = 'Subir';
+}
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
+</body>
+</html>

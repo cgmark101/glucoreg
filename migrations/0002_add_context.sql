@@ -1,0 +1,1 @@
+ALTER TABLE readings ADD COLUMN context TEXT NOT NULL DEFAULT 'other';

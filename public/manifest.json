@@ -1,0 +1,18 @@
+{
+  "name": "GlucoReg",
+  "short_name": "GlucoReg",
+  "description": "Registro personal de glucosa y presión arterial",
+  "start_url": "/glucose.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#22d3ee",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

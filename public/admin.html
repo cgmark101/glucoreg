@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GlucoReg — Admin</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css?v=2">
+<link rel="apple-touch-icon" href="/icon.svg">
+</head>
+<body>
+<div id="page-loader"><div class="spinner"></div><span>Cargando...</span></div>
+<div class="container">
+  <div class="app-header">
+    <h1>GlucoReg</h1>
+    <div class="user-badge">
+      <span id="user-name"></span>
+      <div style="position:relative">
+        <div class="menu-dots" onclick="toggleMenu()">⋯</div>
+        <div class="menu-dropdown" id="menu-dropdown">
+          <button onclick="handleLogout()" style="color:var(--danger)">🚪 Salir</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-bar">
+    <button onclick="navTo('glucose.html')">Glucosa</button>
+    <button onclick="navTo('pressure.html')">Presión</button>
+  </div>
+
+  <div class="admin-layout">
+    <div class="admin-sidebar" id="admin-sidebar">
+      <button class="admin-nav-btn active" data-section="dashboard" onclick="switchSection('dashboard')">📊 Dashboard</button>
+      <button class="admin-nav-btn" data-section="users" onclick="switchSection('users')">👥 Usuarios</button>
+      <button class="admin-nav-btn" data-section="broadcast" onclick="switchSection('broadcast')">📢 Broadcast</button>
+    </div>
+    <div class="admin-content">
+      <div id="section-dashboard" class="admin-section active">
+        <div id="dash-loading" style="text-align:center;padding:32px;color:var(--muted)"><span class="spinner"></span> Cargando...</div>
+        <div id="dash-content"></div>
+      </div>
+      <div id="section-users" class="admin-section">
+        <div id="admin-loading" style="text-align:center;padding:32px;color:var(--muted)"><span class="spinner"></span> Cargando...</div>
+        <div id="admin-content"></div>
+      </div>
+      <div id="section-broadcast" class="admin-section">
+        <div id="broadcast-content"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal">
+  <div class="modal-box">
+    <h3 id="modal-title">Editar usuario</h3>
+    <div id="modal-body"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="modal-save" onclick="saveUser()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+<div id="error-msg" class="error-msg" style="display:none;position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:200;max-width:480px;width:90%"></div>
+
+<script src="/shared.js?v=2"></script>
+<script>
+checkAuth();
+
+let editingUser = null;
+let usersData = [];
+let currentSection = 'dashboard';
+
+function switchSection(section) {
+  currentSection = section;
+  document.querySelectorAll('.admin-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.section === section));
+  document.querySelectorAll('.admin-section').forEach(s => s.classList.toggle('active', s.id === 'section-' + section));
+  if (section === 'dashboard' && !document.getElementById('dash-content').innerHTML) loadDashboard();
+  if (section === 'users' && !document.getElementById('admin-content').innerHTML) loadAdmin();
+  if (section === 'broadcast' && !document.getElementById('broadcast-content').innerHTML) initBroadcast();
+}
+
+function closeModal() { document.getElementById('modal').classList.remove('show'); }
+
+function openEdit(user) {
+  editingUser = user;
+  document.getElementById('modal-title').textContent = 'Editar: ' + user.username;
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-group"><label>Username</label><input type="text" id="edit-username" value="${user.username}"></div>
+    <div class="form-group"><label>Rol</label>
+      <select id="edit-role">
+        <option value="user" ${user.role==='user'?'selected':''}>Usuario normal</option>
+        <option value="admin" ${user.role==='admin'?'selected':''}>Administrador</option>
+      </select>
+    </div>
+    <div class="form-group"><label>WhatsApp</label><input type="tel" id="edit-phone" value="${user.phone||''}" placeholder="584121234567"></div>
+    <div class="form-group"><label>Email</label><input type="email" id="edit-email" value="${user.email||''}" placeholder="usuario@correo.com"></div>
+  `;
+  document.getElementById('modal').classList.add('show');
+}
+
+async function saveUser() {
+  const u = document.getElementById('edit-username').value;
+  const role = document.getElementById('edit-role').value;
+  const phone = document.getElementById('edit-phone').value.trim();
+  const email = document.getElementById('edit-email').value.trim();
+  const btn = document.getElementById('modal-save');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const res = await fetch(API + '/admin/users/' + editingUser.id, {
+      method:'PATCH', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body: JSON.stringify({ username:u, role, phone: phone || null, email: email || null })
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error); btn.disabled=false; btn.textContent='Guardar'; return; }
+    closeModal();
+    showToast('✓ Usuario actualizado', 'success');
+    loadAdmin(); loadDashboard();
+  } catch(e) { showError('Error'); btn.disabled=false; btn.textContent='Guardar'; }
+}
+
+async function deleteUser(id, uname) {
+  if (!confirm('¿Eliminar a "' + uname + '" y todos sus datos? No se puede deshacer.')) return;
+  try {
+    const res = await fetch(API + '/admin/users/' + id, {
+      method:'DELETE', headers:{'Authorization':'Bearer '+token}
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error); return; }
+    showToast('✓ ' + data.message, 'success');
+    loadAdmin(); loadDashboard();
+  } catch(e) { showError('Error'); }
+}
+
+async function loadDashboard() {
+  document.getElementById('dash-loading').style.display = 'block';
+  document.getElementById('dash-content').innerHTML = '';
+  try {
+    const res = await fetch(API + '/admin/users', { headers:{'Authorization':'Bearer '+token} });
+    const data = await res.json();
+    if (!res.ok) { document.getElementById('dash-loading').textContent = 'Error: ' + (data.error||'desconocido'); return; }
+    document.getElementById('dash-loading').style.display = 'none';
+    const users = data.users || [];
+    const totalReadings = users.reduce((s,u) => s + (u.readings||0), 0);
+    const totalBp = users.reduce((s,u) => s + (u.blood_pressure||0), 0);
+    const admins = users.filter(u => u.role === 'admin').length;
+    const withPhone = users.filter(u => u.phone).length;
+    document.getElementById('dash-content').innerHTML = `
+      <div class="admin-stats">
+        <div class="admin-stat"><div class="num">${users.length}</div><div class="lbl">Usuarios</div></div>
+        <div class="admin-stat"><div class="num">${admins}</div><div class="lbl">Admins</div></div>
+        <div class="admin-stat"><div class="num">${totalReadings}</div><div class="lbl">Lecturas glucosa</div></div>
+        <div class="admin-stat"><div class="num">${totalBp}</div><div class="lbl">Mediciones presión</div></div>
+      </div>
+      <div class="admin-card">
+        <h3>📱 WhatsApp configurado</h3>
+        <p style="color:var(--muted);font-size:.9rem">${withPhone} de ${users.length} usuarios tienen teléfono registrado para notificaciones.</p>
+      </div>
+      <div class="admin-card">
+        <h3>👥 Últimos usuarios</h3>
+        ${users.slice(0,5).map(u => `
+          <div class="metric-row" style="margin-bottom:4px">
+            <div class="icon">${u.role === 'admin' ? '👑' : '👤'}</div>
+            <div class="info">
+              <div class="label">${u.username} ${u.username === username ? '<span class="badge warn" style="font-size:.6rem;padding:1px 6px">Tú</span>' : ''}</div>
+              <div class="sub">${u.readings} lecturas · ${u.blood_pressure} presiones · ${u.created_at ? u.created_at.slice(0,10) : '—'}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  } catch(e) { document.getElementById('dash-loading').textContent = 'Error de conexión'; }
+}
+
+async function loadAdmin() {
+  try {
+    const res = await fetch(API + '/admin/users', { headers:{'Authorization':'Bearer '+token} });
+    const data = await res.json();
+    if (!res.ok) { document.getElementById('admin-loading').textContent = 'Error: ' + (data.error||'desconocido'); return; }
+    document.getElementById('admin-loading').style.display = 'none';
+    usersData = data.users;
+    document.getElementById('admin-content').innerHTML = `
+      <div class="section-title">Usuarios (${usersData.length})</div>
+      ${usersData.map(u => `
+        <div class="admin-user-card">
+          <div class="avatar">${u.role === 'admin' ? '👑' : '👤'}</div>
+          <div class="info">
+            <div class="name">
+              ${u.username}
+              ${u.role === 'admin' ? '<span class="badge good" style="font-size:.65rem;padding:2px 6px;margin-left:6px">Admin</span>' : ''}
+              ${u.username === username ? '<span class="badge warn" style="font-size:.65rem;padding:2px 6px;margin-left:4px">Tú</span>' : ''}
+            </div>
+            <div class="meta">
+              <span>📊 ${u.readings} glucosa</span>
+              <span>❤️ ${u.blood_pressure} presión</span>
+              ${u.phone ? '<span>📱 '+u.phone+'</span>' : ''}
+              ${u.email ? '<span>✉️ '+u.email+'</span>' : ''}
+              <span>📅 ${u.created_at ? u.created_at.slice(0,10) : '—'}</span>
+            </div>
+          </div>
+          ${u.username !== username ? `
+          <div class="actions">
+            <button onclick='openEdit(${JSON.stringify(u).replace(/'/g,"&#39;")})'>✏️ Editar</button>
+            <button class="danger-btn" onclick="deleteUser(${u.id},'${u.username}')">🗑️</button>
+          </div>` : ''}
+        </div>
+      `).join('')}
+    `;
+  } catch(e) { document.getElementById('admin-loading').textContent = 'Error de conexión'; }
+}
+
+function initBroadcast() {
+  const phoneUsers = usersData.filter(u => u.phone);
+  document.getElementById('broadcast-content').innerHTML = `
+    <div class="admin-card broadcast-area">
+      <h3>📢 Broadcast WhatsApp</h3>
+      <div class="broadcast-info">
+        Enviar mensaje a <strong>${phoneUsers.length} usuario(s)</strong> con WhatsApp configurado.
+      </div>
+      <textarea id="broadcast-msg" rows="4" placeholder="Escribí el mensaje a enviar..."></textarea>
+      <button class="btn btn-primary" onclick="sendBroadcast()" id="broadcast-btn" style="margin-top:12px">Enviar Broadcast</button>
+      <div class="broadcast-status" id="broadcast-status"></div>
+    </div>
+  `;
+}
+
+async function sendBroadcast() {
+  const msg = document.getElementById('broadcast-msg').value.trim();
+  if (!msg) { showError('Escribí un mensaje'); return; }
+  if (!confirm('¿Enviar este mensaje a todos los usuarios con WhatsApp?')) return;
+  const btn = document.getElementById('broadcast-btn');
+  const status = document.getElementById('broadcast-status');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  status.textContent = 'Enviando...'; status.style.color = 'var(--muted)';
+  try {
+    const res = await fetch(API + '/admin/broadcast', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body: JSON.stringify({ message: msg }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error); btn.disabled=false; btn.textContent='Enviar Broadcast'; status.textContent=''; return; }
+    status.textContent = '✓ ' + data.message;
+    status.style.color = 'var(--success)';
+    document.getElementById('broadcast-msg').value = '';
+  } catch(e) { showError('Error'); }
+  btn.disabled = false; btn.textContent = 'Enviar Broadcast';
+  setTimeout(() => status.textContent = '', 5000);
+}
+
+if (userRole !== 'admin') {
+  document.querySelector('.admin-layout').innerHTML = '<div class="admin-card" style="text-align:center;padding:40px"><p style="font-size:1.2rem;margin-bottom:8px">🔒</p><p style="color:var(--muted)">Acceso denegado — solo administradores</p></div>';
+} else {
+  switchSection('dashboard');
+}
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
+</body>
+</html>

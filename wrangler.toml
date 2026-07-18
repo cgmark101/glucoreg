@@ -1,0 +1,16 @@
+name = "glucoreg"
+compatibility_date = "2026-07-01"
+main = "src/index.ts"
+assets = { directory = "public", browser_ttl = 0 }
+
+[[d1_databases]]
+binding = "DB"
+database_name = "glucoreg-db"
+database_id = "28c71451-1ebc-4867-9f34-91f02fc58fda"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["0 10 * * 1"]
+
+[vars]
+WAHA_BASE_URL = "https://waha.yeguez.com"

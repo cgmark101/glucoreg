@@ -1,0 +1,32 @@
+{
+  "name": "glucoreg",
+  "version": "1.0.0",
+  "description": "Glucose level tracker API — Hono + Cloudflare Workers + D1",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "migrate": "wrangler d1 migrations apply glucoreg-db --remote",
+    "migrate:local": "wrangler d1 migrations apply glucoreg-db --local",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "glucose",
+    "hono",
+    "cloudflare",
+    "d1"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "hono": "^4.12.29"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.18.4",
+    "@cloudflare/workers-types": "^5.20260712.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.110.0"
+  }
+}

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GlucoReg — Acceso</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css?v=2">
+<style>
+  #auth-screen { display:flex; flex-direction:column; justify-content:center; min-height:100dvh; padding:24px 16px; }
+  #auth-screen h1 { font-size:2rem; font-weight:700; margin-bottom:4px; }
+  #auth-screen .subtitle { color:var(--muted); margin-bottom:32px; font-size:.9rem; }
+  .tab-bar { margin-bottom:24px; }
+</style>
+</head>
+<body>
+<div class="container" id="auth-screen">
+  <h1>GlucoReg</h1>
+  <p class="subtitle">Registro personal de glucosa y presión</p>
+  <div class="tab-bar">
+    <button class="active" onclick="switchTab('login')">Iniciar sesión</button>
+    <button onclick="switchTab('register')">Registrarse</button>
+  </div>
+  <div id="error-msg" class="error-msg"></div>
+  <div id="success-msg" class="success-msg"></div>
+
+  <form id="login-form" onsubmit="handleLogin(event)">
+    <div class="form-group">
+      <label>Usuario</label>
+      <input type="text" id="login-username" placeholder="Tu nombre de usuario" required autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label>Contraseña</label>
+      <input type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password">
+    </div>
+    <button type="submit" class="btn btn-primary" id="login-btn">Entrar</button>
+  </form>
+
+  <form id="register-form" style="display:none" onsubmit="handleRegister(event)">
+    <div class="form-group">
+      <label>Usuario</label>
+      <input type="text" id="register-username" placeholder="Elegí un nombre" required autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label>Contraseña</label>
+      <input type="password" id="register-password" placeholder="Mínimo 6 caracteres" required autocomplete="new-password">
+    </div>
+    <button type="submit" class="btn btn-primary" id="register-btn">Crear cuenta</button>
+  </form>
+</div>
+
+  <div id="toast" class="toast"></div>
+  <div id="relogin-msg" style="display:none;position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:200;max-width:480px;width:90%;background:var(--warning-bg,rgba(251,191,36,.15));color:var(--warning,#fbbf24);padding:12px 20px;border-radius:12px;text-align:center;font-size:.9rem;font-weight:500;backdrop-filter:blur(8px)"></div>
+
+<script>
+const API = '';
+
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = msg; el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 4000);
+}
+function showSuccess(msg) {
+  const el = document.getElementById('success-msg');
+  el.textContent = msg; el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 4000);
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-bar button').forEach(b => b.classList.toggle('active', b.textContent.includes(tab === 'login' ? 'Iniciar' : 'Registrarse')));
+  document.getElementById('login-form').style.display = tab === 'login' ? 'block' : 'none';
+  document.getElementById('register-form').style.display = tab === 'register' ? 'block' : 'none';
+  document.getElementById('error-msg').style.display = 'none';
+}
+
+async function handleLogin(e) {
+  e.preventDefault();
+  const btn = document.getElementById('login-btn');
+  const username = document.getElementById('login-username').value;
+  const password = document.getElementById('login-password').value;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const res = await fetch(API + '/auth/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({username, password})
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error); btn.disabled = false; btn.textContent = 'Entrar'; return; }
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('refreshToken', data.refreshToken);
+    localStorage.setItem('username', data.user.username);
+    localStorage.setItem('role', data.user.role || 'user');
+    window.location.href = '/glucose.html';
+  } catch(e) { showError('Error de conexión'); btn.disabled = false; btn.textContent = 'Entrar'; }
+}
+
+async function handleRegister(e) {
+  e.preventDefault();
+  const btn = document.getElementById('register-btn');
+  const username = document.getElementById('register-username').value;
+  const password = document.getElementById('register-password').value;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const res = await fetch(API + '/auth/register', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({username, password})
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error); btn.disabled = false; btn.textContent = 'Crear cuenta'; return; }
+    showSuccess('Cuenta creada. Redirigiendo...');
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('refreshToken', data.refreshToken);
+    localStorage.setItem('username', data.user.username);
+    localStorage.setItem('role', data.user.role || 'user');
+    setTimeout(() => window.location.href = '/glucose.html', 500);
+  } catch(e) { showError('Error de conexión'); btn.disabled = false; btn.textContent = 'Crear cuenta'; }
+}
+
+// Redirect if already logged in
+if (localStorage.getItem('token') && localStorage.getItem('username')) {
+  window.location.href = '/glucose.html';
+}
+
+// Mostrar mensaje si volvió por sesión expirada
+const reloginMsg = sessionStorage.getItem('relogin');
+if (reloginMsg) {
+  sessionStorage.removeItem('relogin');
+  const el = document.getElementById('relogin-msg');
+  el.textContent = '⏰ ' + reloginMsg;
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 6000);
+}
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
+</body>
+</html>

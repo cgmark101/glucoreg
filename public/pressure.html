@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GlucoReg — Presión</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css?v=2">
+<link rel="apple-touch-icon" href="/icon.svg">
+</head>
+<body>
+<div id="page-loader"><div class="spinner"></div><span>Cargando...</span></div>
+<div class="container">
+  <div class="app-header">
+    <h1>GlucoReg</h1>
+    <div class="user-badge">
+      <span id="user-name"></span>
+      <button class="logout-btn" onclick="navTo('dashboard.html')">📊</button>
+      <div style="position:relative">
+        <div class="menu-dots" onclick="toggleMenu()">⋯</div>
+        <div class="menu-dropdown" id="menu-dropdown">
+          <button onclick="navTo('import.html')">📥 Importar CSV</button>
+          <button onclick="handleLogout()" style="color:var(--danger)">🚪 Salir</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-bar">
+    <button onclick="navTo('glucose.html')">Glucosa</button>
+    <button class="active">Presión</button>
+  </div>
+
+  <div class="add-card">
+    <h2>Nueva medición</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div class="form-group" style="flex:1;min-width:80px">
+        <label>Sistólica</label>
+        <input type="number" id="bp-sys" placeholder="120" min="50" max="300">
+      </div>
+      <div class="form-group" style="flex:1;min-width:80px">
+        <label>Diastólica</label>
+        <input type="number" id="bp-dia" placeholder="80" min="30" max="200">
+      </div>
+      <div class="form-group" style="flex:1;min-width:70px">
+        <label>Pulso</label>
+        <input type="number" id="bp-hr" placeholder="72" min="20" max="300">
+      </div>
+    </div>
+    <div class="add-row" style="margin-top:12px">
+      <div class="form-group">
+        <label>Fecha y hora</label>
+        <input type="datetime-local" id="bp-dt" onchange="suggestContext('bp-dt','bp-ctx')">
+      </div>
+      <div class="form-group" style="flex:0.8">
+        <label>Contexto</label>
+        <select id="bp-ctx" style="width:100%;padding:12px 16px;border:1px solid var(--surface2);border-radius:10px;background:var(--surface);color:var(--text);font-size:0.9rem">
+          <option value="fasting">En ayunas</option>
+          <option value="before_meal">Antes de comer</option>
+          <option value="after_meal">Después de comer</option>
+          <option value="bedtime">Al acostarse</option>
+          <option value="other">Otro</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="handleAddBp()" style="white-space:nowrap">Registrar</button>
+    </div>
+  </div>
+
+  <div class="filter-chip" onclick="toggleBpHistory()" style="display:flex;justify-content:space-between;align-items:center;width:100%;padding:12px 16px;border-radius:10px;border:1px solid var(--surface2);background:var(--surface);color:var(--text);font-size:.9rem;font-weight:600;cursor:pointer;margin-bottom:8px">
+    <span>📋 Historial</span>
+    <span id="bp-history-toggle">▶</span>
+  </div>
+
+  <div id="bp-history-section" style="display:none">
+    <div class="readings-header"><h2>Mediciones</h2><span class="count" id="bp-count">0</span></div>
+    <div id="bp-list"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
+      <button class="btn btn-outline" id="bp-prev" onclick="changeBpPage(-1)" style="width:auto;padding:8px 16px;font-size:.85rem">← Anterior</button>
+      <span id="bp-page-info" style="font-size:.85rem;color:var(--muted)">Página 1</span>
+      <button class="btn btn-outline" id="bp-next" onclick="changeBpPage(1)" style="width:auto;padding:8px 16px;font-size:.85rem">Siguiente →</button>
+    </div>
+    <div id="bp-empty" class="empty-state" style="display:none"><p>Sin mediciones aún</p><p class="hint">Registrá tu primera presión arriba</p></div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+<div id="error-msg" class="error-msg" style="display:none;position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:200;max-width:480px;width:90%"></div>
+
+<script src="/shared.js?v=2"></script>
+<script>
+checkAuth();
+
+const BP_PAGE_SIZE = 10;
+let bpHistoryVisible = false;
+let bpPage = 0;
+
+function toggleBpHistory() {
+  bpHistoryVisible = !bpHistoryVisible;
+  document.getElementById('bp-history-section').style.display = bpHistoryVisible ? 'block' : 'none';
+  document.getElementById('bp-history-toggle').textContent = bpHistoryVisible ? '▼' : '▶';
+  if (bpHistoryVisible) loadBp();
+}
+
+function changeBpPage(delta) {
+  bpPage = Math.max(0, bpPage + delta);
+  loadBp();
+}
+
+async function loadBp() {
+  try {
+    const res = await fetch(API + '/blood-pressure?limit=' + BP_PAGE_SIZE + '&offset=' + (bpPage * BP_PAGE_SIZE), { headers:{'Authorization':'Bearer '+token} });
+    const data = await res.json();
+    if (!res.ok) return;
+    const total = data.total || 0;
+    document.getElementById('bp-count').textContent = total;
+    const list = document.getElementById('bp-list');
+    const empty = document.getElementById('bp-empty');
+    if (total === 0) { list.innerHTML=''; empty.style.display='block'; const el = document.getElementById('bp-prev'); if (el) el.parentElement.style.display='none'; return; }
+    empty.style.display='none';
+    const tp = Math.max(1, Math.ceil(total / BP_PAGE_SIZE));
+    document.getElementById('bp-page-info').textContent = `Página ${bpPage + 1} de ${tp}`;
+    document.getElementById('bp-prev').disabled = bpPage === 0;
+    document.getElementById('bp-next').disabled = (bpPage * BP_PAGE_SIZE) + BP_PAGE_SIZE >= total;
+    list.innerHTML = data.readings.map(r => {
+      const fmt = formatDate(r.recorded_at);
+      return `<div class="reading-item"><div><div class="reading-value">${r.systolic}/${r.diastolic} <span class="unit">mmHg</span></div><div style="font-size:.7rem;color:var(--muted)">${r.heart_rate?'Pulso: '+r.heart_rate+' · ':''}${CTX_LABELS[r.context]||r.context}</div></div><div style="display:flex;align-items:center;gap:12px"><div class="reading-meta"><div class="date">${fmt.date}</div><div>${fmt.time}</div></div><button class="reading-delete" onclick="deleteBp(${r.id})" title="Eliminar">✕</button></div></div>`;
+    }).join('');
+  } catch(e) { showError('Error al cargar'); }
+}
+
+async function handleAddBp() {
+  const sys = parseInt(document.getElementById('bp-sys').value);
+  const dia = parseInt(document.getElementById('bp-dia').value);
+  const hr = parseInt(document.getElementById('bp-hr').value) || undefined;
+  if (!sys || sys<50) { showError('Sistólica inválida'); return; }
+  if (!dia || dia<30) { showError('Diastólica inválida'); return; }
+  const btn = document.querySelector('.add-card .btn-primary');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  const body = { systolic:sys, diastolic:dia, context:document.getElementById('bp-ctx').value, tz_offset:-new Date().getTimezoneOffset() };
+  if (hr) body.heart_rate = hr;
+  const dt = document.getElementById('bp-dt').value;
+  if (dt) body.recorded_at = new Date(dt).toISOString();
+  try {
+    const res = await fetch(API + '/blood-pressure', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body:JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) { btn.disabled=false; btn.textContent='Registrar'; showError(data.error); return; }
+    document.getElementById('bp-sys').value=''; document.getElementById('bp-dia').value='';
+    document.getElementById('bp-hr').value=''; document.getElementById('bp-dt').value='';
+    showToast('✓ Registrada','success'); bpPage = 0;
+    if (!bpHistoryVisible) toggleBpHistory(); else loadBp();
+  } catch(e) { showError('Error de conexión'); }
+  btn.disabled = false; btn.textContent = 'Registrar';
+}
+
+async function deleteBp(id) {
+  if (!confirm('¿Eliminar?')) return;
+  try {
+    const res = await fetch(API + '/blood-pressure/'+id, { method:'DELETE', headers:{'Authorization':'Bearer '+token} });
+    if (!res.ok) return;
+    showToast('✓ Eliminada','success'); bpPage = 0;
+    if (!bpHistoryVisible) toggleBpHistory(); else loadBp();
+  } catch(e) { showError('Error de conexión'); }
+}
+
+loadBp();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
+</body>
+</html>

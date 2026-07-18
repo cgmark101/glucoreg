@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GlucoReg — Métricas</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css?v=2">
+<link rel="apple-touch-icon" href="/icon.svg">
+<style>
+  .placeholder-card { background:var(--surface); border-radius:16px; padding:40px 20px; text-align:center; color:var(--muted); }
+  .placeholder-card .icon { font-size:2.5rem; margin-bottom:12px; }
+  .placeholder-card p { font-size:.9rem; }
+
+  .status-banner {
+    border-radius:16px; padding:20px; margin-bottom:20px; text-align:center;
+  }
+  .status-banner.good { background:rgba(34,197,94,.15); }
+  .status-banner.warn { background:rgba(251,191,36,.15); }
+  .status-banner.bad { background:rgba(244,63,94,.15); }
+  .status-banner .emoji { font-size:2rem; margin-bottom:8px; }
+  .status-banner .msg { font-size:1.1rem; font-weight:600; }
+  .status-banner .sub { font-size:.8rem; color:var(--muted); margin-top:4px; }
+
+  .metric-row {
+    background:var(--surface); border-radius:12px; padding:16px; margin-bottom:8px;
+    display:flex; align-items:center; gap:12px;
+  }
+  .metric-row .icon { font-size:1.3rem; width:32px; text-align:center; }
+  .metric-row .info { flex:1; }
+  .metric-row .info .label { font-size:.8rem; color:var(--muted); }
+  .metric-row .info .value { font-size:1.3rem; font-weight:700; }
+  .metric-row .info .sub { font-size:.75rem; color:var(--muted); margin-top:2px; }
+  .metric-row .badge {
+    padding:4px 10px; border-radius:20px; font-size:.75rem; font-weight:600;
+  }
+  .badge.good { background:rgba(34,197,94,.2); color:var(--success); }
+  .badge.warn { background:rgba(251,191,36,.2); color:#fbbf24; }
+  .badge.bad { background:rgba(244,63,94,.2); color:var(--danger); }
+
+  .section-title {
+    font-size:.85rem; color:var(--muted); margin:20px 0 12px;
+    text-transform:uppercase; letter-spacing:.05em; font-weight:600;
+  }
+</style>
+</head>
+<body>
+<div id="page-loader"><div class="spinner"></div><span>Cargando...</span></div>
+<div class="container">
+  <div class="app-header">
+    <h1>GlucoReg</h1>
+    <div class="user-badge">
+      <span id="user-name"></span>
+      <div style="position:relative">
+        <div class="menu-dots" onclick="toggleMenu()">⋯</div>
+        <div class="menu-dropdown" id="menu-dropdown">
+          <button onclick="navTo('import.html')">📥 Importar CSV</button>
+          <button onclick="handleLogout()" style="color:var(--danger)">🚪 Salir</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-bar">
+    <button onclick="navTo('glucose.html')">Glucosa</button>
+    <button onclick="navTo('pressure.html')">Presión</button>
+  </div>
+
+  <div class="tab-bar" style="margin-bottom:16px">
+    <button class="active" data-section="glucose" onclick="switchMetricTab('glucose')">🩸 Glucosa</button>
+    <button data-section="pressure" onclick="switchMetricTab('pressure')">❤️ Presión</button>
+  </div>
+
+  <div id="section-glucose">
+    <div class="filter-quick" style="margin-bottom:16px">
+      <button class="filter-chip" data-range="all" onclick="loadGlucoseMetrics('all')">Todo</button>
+      <button class="filter-chip" data-range="today" onclick="loadGlucoseMetrics('today')">Hoy</button>
+      <button class="filter-chip" data-range="7d" onclick="loadGlucoseMetrics('7d')">7 días</button>
+      <button class="filter-chip" data-range="30d" onclick="loadGlucoseMetrics('30d')">30 días</button>
+    </div>
+    <div id="glucose-loading" style="text-align:center;padding:32px;color:var(--muted)"><span class="spinner"></span> Calculando...</div>
+    <div id="glucose-content"></div>
+  </div>
+
+  <div id="section-pressure" style="display:none">
+    <div class="filter-quick" style="margin-bottom:16px">
+      <button class="filter-chip" data-range="all" onclick="loadBpMetrics('all')">Todo</button>
+      <button class="filter-chip" data-range="today" onclick="loadBpMetrics('today')">Hoy</button>
+      <button class="filter-chip" data-range="7d" onclick="loadBpMetrics('7d')">7 días</button>
+      <button class="filter-chip" data-range="30d" onclick="loadBpMetrics('30d')">30 días</button>
+    </div>
+    <div id="bp-loading" style="text-align:center;padding:32px;color:var(--muted)"><span class="spinner"></span> Calculando...</div>
+    <div id="bp-content"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+<div id="error-msg" class="error-msg" style="display:none;position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:200;max-width:480px;width:90%"></div>
+
+<script src="/shared.js?v=2"></script>
+<script>
+checkAuth();
+
+const fmt = n => n != null ? n.toFixed(1) : '—';
+
+const bpLabels = { normal:'Tu presión está en rango normal', elevada:'Tu presión está un poco elevada', hipertension_1:'Tu presión está en Hipertensión Etapa 1 — consultá a tu médico', hipertension_2:'Tu presión está en Hipertensión Etapa 2 — consultá a tu médico', crisis:'🚨 Crisis Hipertensiva — buscá atención médica urgente' };
+const bpEmojis = { normal:'✅', elevada:'👀', hipertension_1:'⚠️', hipertension_2:'🔴', crisis:'🚨' };
+const bpColors = { normal:'good', elevada:'warn', hipertension_1:'warn', hipertension_2:'bad', crisis:'bad' };
+
+function switchMetricTab(tab) {
+  document.querySelectorAll('[data-section]').forEach(b => b.classList.toggle('active', b.dataset.section === tab));
+  document.getElementById('section-glucose').style.display = tab === 'glucose' ? 'block' : 'none';
+  document.getElementById('section-pressure').style.display = tab === 'pressure' ? 'block' : 'none';
+  if (tab === 'pressure') loadBpMetrics();
+}
+
+async function loadGlucoseMetrics(range) {
+  document.querySelectorAll('#section-glucose .filter-chip').forEach(c => c.classList.toggle('active', c.dataset.range === (range || 'all')));
+  document.getElementById('glucose-loading').style.display = 'block';
+  document.getElementById('glucose-content').innerHTML = '';
+
+  try {
+    const tz = -new Date().getTimezoneOffset();
+    let url = API + '/metrics?tz_offset=' + tz;
+    const now = new Date();
+    if (range === 'today') {
+      const d = now.toISOString().slice(0,10);
+      url += '&from=' + d + 'T00:00:00.000Z&to=' + d + 'T23:59:59.999Z';
+    } else if (range === '7d') {
+      url += '&from=' + new Date(now - 7*86400000).toISOString();
+    } else if (range === '30d') {
+      url += '&from=' + new Date(now - 30*86400000).toISOString();
+    }
+    const res = await fetch(url, { headers:{'Authorization':'Bearer '+token} });
+    const d = await res.json();
+    if (!res.ok) { document.getElementById('glucose-loading').textContent = d.error === 'No data' ? 'Sin datos aún — registrá tus primeras lecturas' : 'Error al cargar'; return; }
+    document.getElementById('glucose-loading').style.display = 'none';
+
+    const overall = d.overall;
+    const trend = d.weekComparison && d.weekComparison.thisWeek != null ?
+      (() => { const diff = d.weekComparison.thisWeek - (d.weekComparison.lastWeek || d.weekComparison.thisWeek);
+        return Math.abs(diff) < 2 ? '📊 Estable respecto a la semana anterior' :
+          diff < 0 ? `📉 Bajaste ${Math.abs(diff).toFixed(1)} pts, ¡mejorando!` :
+          `📈 Subiste ${diff.toFixed(1)} pts respecto a la semana anterior`;
+      })() : '';
+
+    const fmtCtx = (ctx) => {
+      if (!ctx || !ctx.avg) return '';
+      const s = ctx.status || {};
+      return `<div class="metric-row">
+        <div class="icon">${s.emoji || '📊'}</div>
+        <div class="info">
+          <div class="label">${ctx.label} <span style="font-size:.7rem;color:var(--muted)">(${ctx.range} mg/dL)</span></div>
+          <div class="value">${fmt(ctx.avg)} ${s.msg ? `<span class="badge ${s.cls || ''}" style="font-size:.7rem;padding:2px 8px;margin-left:8px">${s.msg}</span>` : ''}</div>
+          <div class="sub">${ctx.count} mediciones · ${ctx.inRangePct}% en rango</div>
+        </div>
+      </div>`;
+    };
+
+    const overallStatus = overall.avg != null ? (
+      overall.avg < 70 ? { cls:'bad', emoji:'⚠️', msg:'Tus niveles están un poco bajos' } :
+      overall.avg <= 100 ? { cls:'good', emoji:'✅', msg:'Tus niveles están muy bien' } :
+      overall.avg <= 140 ? { cls:'warn', emoji:'👀', msg:'Tus niveles están un poco elevados' } :
+      { cls:'bad', emoji:'🔴', msg:'Tus niveles están altos, consultá a tu médico' }
+    ) : { cls:'', emoji:'📊', msg:'Faltan datos' };
+
+    document.getElementById('glucose-content').innerHTML = `
+      <div class="status-banner ${overallStatus.cls}">
+        <div class="emoji">${overallStatus.emoji}</div>
+        <div class="msg">${overallStatus.msg}</div>
+        <div class="sub">Promedio general: ${fmt(overall.avg)} mg/dL · ${overall.total} lecturas</div>
+      </div>
+
+      <div class="section-title">Según el contexto</div>
+
+      ${(d.byContext || []).filter(c => c.count > 0).map(fmtCtx).join('')}
+
+      <div class="section-title">Tus números</div>
+
+      <div class="metric-row">
+        <div class="icon">📈</div>
+        <div class="info"><div class="label">Lo más alto registrado</div><div class="value">${overall.max ?? '—'}</div></div>
+      </div>
+      <div class="metric-row">
+        <div class="icon">📉</div>
+        <div class="info"><div class="label">Lo más bajo registrado</div><div class="value">${overall.min ?? '—'}</div></div>
+      </div>
+
+      ${trend ? `
+      <div class="section-title">Evolución</div>
+      <div class="metric-row"><div class="icon">📅</div><div class="info"><div class="value">${trend}</div></div></div>` : ''}
+
+      <div class="section-title">Tu constancia</div>
+
+      <div class="metric-row"><div class="icon">📋</div><div class="info"><div class="label">Total de mediciones</div><div class="value">${overall.total}</div></div></div>
+      <div class="metric-row"><div class="icon">📅</div><div class="info"><div class="label">Días con registro</div><div class="value">${d.daysWithReadings}</div></div></div>
+      <div class="metric-row">
+        <div class="icon">🔥</div>
+        <div class="info">
+          <div class="label">Racha actual</div>
+          <div class="value">${d.streak > 0 ? d.streak + ' días seguidos' : 'Hoy sin registro'}</div>
+          <div class="sub">${d.streak > 0 ? '¡No pierdas la racha!' : '¡Registrá hoy!'}</div>
+        </div>
+      </div>
+
+      ${d.peakHours && d.peakHours.length > 0 ? `
+      <div class="section-title">Tus horas del día</div>
+      ${d.peakHours.slice(0,3).map(h => {
+        const emoji = h.hour >=5 && h.hour<=9 ? '🌅' : h.hour>=9 && h.hour<=12 ? '☀️' : h.hour>=12 && h.hour<=14 ? '🌤️' : h.hour>=14 && h.hour<=19 ? '🌆' : '🌙';
+        return `<div class="metric-row"><div class="icon">${emoji}</div><div class="info"><div class="label">A las ${h.hour}:00</div><div class="value">${fmt(h.avg)} <span class="sub">— ${h.count} mediciones</span></div></div></div>`;
+      }).join('')}` : ''}
+    `;
+  } catch(e) { document.getElementById('glucose-loading').textContent = 'Error de conexión'; }
+  document.getElementById('glucose-loading').style.display = 'none';
+}
+
+loadGlucoseMetrics();
+
+async function loadBpMetrics(range) {
+  document.querySelectorAll('#section-pressure .filter-chip').forEach(c => c.classList.toggle('active', c.dataset.range === (range || 'all')));
+  document.getElementById('bp-loading').style.display = 'block';
+  document.getElementById('bp-content').innerHTML = '';
+  try {
+    const tz = -new Date().getTimezoneOffset();
+    let url = API + '/blood-pressure/metrics?tz_offset=' + tz;
+    const now = new Date();
+    if (range === 'today') { const d = now.toISOString().slice(0,10); url += '&from=' + d + 'T00:00:00.000Z&to=' + d + 'T23:59:59.999Z'; }
+    else if (range === '7d') { url += '&from=' + new Date(now - 7*86400000).toISOString(); }
+    else if (range === '30d') { url += '&from=' + new Date(now - 30*86400000).toISOString(); }
+    const res = await fetch(url, { headers:{'Authorization':'Bearer '+token} });
+    const d = await res.json();
+    if (!res.ok) { document.getElementById('bp-loading').textContent = d.error === 'No data' ? 'Sin datos aún' : 'Error'; return; }
+    document.getElementById('bp-loading').style.display = 'none';
+    const cls = bpColors[d.classification] || '';
+    const bpRangeMsg = d.total > 0 ? `${Math.round(d.inRange / d.total * 100)}% (${d.inRange} de ${d.total})` : '—';
+    document.getElementById('bp-content').innerHTML = `
+      <div class="status-banner ${cls}">
+        <div class="emoji">${bpEmojis[d.classification]}</div>
+        <div class="msg">${bpLabels[d.classification]}</div>
+        <div class="sub">Presión promedio: ${d.averages.systolic}/${d.averages.diastolic} mmHg</div>
+      </div>
+
+      <div class="section-title">Tus números</div>
+
+      <div class="metric-row">
+        <div class="icon">❤️</div>
+        <div class="info">
+          <div class="label">Presión promedio</div>
+          <div class="value">${d.averages.systolic}/${d.averages.diastolic} <span class="sub">mmHg</span></div>
+          <div class="sub">${d.averages.systolic < 120 && d.averages.diastolic < 80 ? '✅ En rango normal' : d.averages.systolic < 130 ? '👀 Ligeramente elevada' : d.averages.systolic < 140 ? '⚠️ Etapa 1' : '🔴 Etapa 2'}</div>
+        </div>
+      </div>
+
+      ${d.averages.heartRate ? `
+      <div class="metric-row">
+        <div class="icon">💓</div>
+        <div class="info">
+          <div class="label">Pulso promedio</div>
+          <div class="value">${d.averages.heartRate} <span class="sub">lpm</span></div>
+          <div class="sub">${d.averages.heartRate >= 60 && d.averages.heartRate <= 100 ? '✅ Normal' : d.averages.heartRate < 60 ? '👀 Bajo (bradicardia)' : '🔴 Alto (taquicardia)'}</div>
+        </div>
+      </div>` : ''}
+
+      <div class="metric-row">
+        <div class="icon">📈</div>
+        <div class="info"><div class="label">Sistólica más alta</div><div class="value">${d.extremes.systolicMax ?? '—'}</div></div>
+      </div>
+      <div class="metric-row">
+        <div class="icon">📉</div>
+        <div class="info"><div class="label">Diastólica más baja</div><div class="value">${d.extremes.diastolicMin ?? '—'}</div></div>
+      </div>
+
+      <div class="section-title">Rango saludable (&lt;130/80)</div>
+      <div class="metric-row">
+        <div class="icon">🎯</div>
+        <div class="info"><div class="label">Mediciones en rango normal</div><div class="value">${bpRangeMsg}</div></div>
+      </div>
+
+      <div class="section-title">Tu constancia</div>
+
+      <div class="metric-row"><div class="icon">📋</div><div class="info"><div class="label">Total de mediciones</div><div class="value">${d.total}</div></div></div>
+      <div class="metric-row">
+        <div class="icon">🔥</div>
+        <div class="info">
+          <div class="label">Racha actual</div>
+          <div class="value">${d.streak > 0 ? d.streak + ' días seguidos' : 'Hoy sin registro'}</div>
+          <div class="sub">${d.streak > 0 ? '¡No pierdas la racha!' : '¡Registrá hoy!'}</div>
+        </div>
+      </div>
+
+      ${d.dailyReadings && d.dailyReadings.length > 0 ? `
+      <div class="section-title">Últimas lecturas</div>
+      ${d.dailyReadings.slice(0,7).map(r => `<div class="metric-row"><div class="icon">📅</div><div class="info"><div class="label">${r.day.slice(5)}</div><div class="value">${r.systolic}/${r.diastolic} <span class="sub">— ${r.count} med.</span></div></div></div>`).join('')}` : ''}
+    `;
+  } catch(e) { document.getElementById('bp-loading').textContent = 'Error de conexión'; }
+  document.getElementById('bp-loading').style.display = 'none';
+}
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
+</body>
+</html>
