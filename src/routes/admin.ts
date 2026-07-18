@@ -79,7 +79,8 @@ admin.delete('/users/:id', async (c) => {
 admin.post('/broadcast', async (c) => {
   if (!(await checkAdmin(c))) return;
   const db = getDb(c.env);
-  const { message } = await c.req.json<{ message: string }>();
+  const { message, delay_ms } = await c.req.json<{ message: string; delay_ms?: number }>();
+  const delay = Math.max(0, Math.min(10000, delay_ms || 500));
 
   if (!message || typeof message !== 'string' || message.trim().length === 0) {
     return c.json({ error: 'Mensaje requerido', code: 400 }, 400);
@@ -91,9 +92,13 @@ admin.post('/broadcast', async (c) => {
 
   let sent = 0;
   let failed = 0;
-  for (const u of users.results) {
+  for (let i = 0; i < users.results.length; i++) {
+    const u = users.results[i];
     const ok = await sendWhatsApp(c.env, u.phone, message.trim());
     if (ok) sent++; else failed++;
+    if (delay > 0 && i < users.results.length - 1) {
+      await new Promise(r => setTimeout(r, delay));
+    }
   }
 
   return c.json({

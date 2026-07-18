@@ -6,14 +6,14 @@
 <title>GlucoReg — Admin</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/style.css?v=2">
+<link rel="stylesheet" href="/style.css?v=3">
 <link rel="apple-touch-icon" href="/icon.svg">
 </head>
 <body>
 <div id="page-loader"><div class="spinner"></div><span>Cargando...</span></div>
 <div class="container">
   <div class="app-header">
-    <h1>GlucoReg</h1>
+    <h1><a href="/" class="brand-link">GlucoReg</a></h1>
     <div class="user-badge">
       <span id="user-name"></span>
       <div style="position:relative">
@@ -25,12 +25,7 @@
     </div>
   </div>
 
-  <div class="tab-bar">
-    <button onclick="navTo('glucose.html')">Glucosa</button>
-    <button onclick="navTo('pressure.html')">Presión</button>
-  </div>
-
-  <div class="admin-layout">
+  <div class="admin-layout" style="margin-top:0">
     <div class="admin-sidebar" id="admin-sidebar">
       <button class="admin-nav-btn active" data-section="dashboard" onclick="switchSection('dashboard')">📊 Dashboard</button>
       <button class="admin-nav-btn" data-section="users" onclick="switchSection('users')">👥 Usuarios</button>
@@ -221,6 +216,13 @@ function initBroadcast() {
       <div class="broadcast-info">
         Enviar mensaje a <strong>${phoneUsers.length} usuario(s)</strong> con WhatsApp configurado.
       </div>
+      <div class="form-group" style="max-width:200px">
+        <label>Delay entre mensajes</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="number" id="broadcast-delay" value="500" min="0" max="10000" step="100">
+          <span style="color:var(--muted);font-size:.85rem">ms</span>
+        </div>
+      </div>
       <textarea id="broadcast-msg" rows="4" placeholder="Escribí el mensaje a enviar..."></textarea>
       <button class="btn btn-primary" onclick="sendBroadcast()" id="broadcast-btn" style="margin-top:12px">Enviar Broadcast</button>
       <div class="broadcast-status" id="broadcast-status"></div>
@@ -234,12 +236,13 @@ async function sendBroadcast() {
   if (!confirm('¿Enviar este mensaje a todos los usuarios con WhatsApp?')) return;
   const btn = document.getElementById('broadcast-btn');
   const status = document.getElementById('broadcast-status');
+  const delayMs = parseInt(document.getElementById('broadcast-delay').value) || 500;
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
   status.textContent = 'Enviando...'; status.style.color = 'var(--muted)';
   try {
     const res = await fetch(API + '/admin/broadcast', {
       method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
-      body: JSON.stringify({ message: msg }),
+      body: JSON.stringify({ message: msg, delay_ms: delayMs }),
     });
     const data = await res.json();
     if (!res.ok) { showError(data.error); btn.disabled=false; btn.textContent='Enviar Broadcast'; status.textContent=''; return; }

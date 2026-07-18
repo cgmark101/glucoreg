@@ -1,5 +1,5 @@
 const CACHE = 'glucoreg-v2';
-const ASSETS = ['/','/style.css?v=2','/shared.js?v=2','/glucose.html','/pressure.html','/import.html','/dashboard.html','/admin.html','/profile.html','/favicon.svg','/icon.svg','/manifest.json'];
+const ASSETS = ['/','/style.css?v=3','/shared.js?v=2','/glucose.html','/pressure.html','/import.html','/dashboard.html','/admin.html','/profile.html','/favicon.svg','/icon.svg','/manifest.json'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
