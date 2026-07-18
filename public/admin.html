@@ -240,11 +240,11 @@ function initBroadcast() {
 async function sendBroadcast() {
   const msg = document.getElementById('broadcast-msg').value.trim();
   if (!msg) { showError('Escribí un mensaje'); return; }
+  const delayMs = parseInt(document.getElementById('broadcast-delay').value) || 3000;
   const totalUsers = usersData.filter(u => u.phone).length;
   if (!confirm(`¿Enviar a ${totalUsers} usuario(s) con ${delayMs}ms de delay (~${Math.ceil(totalUsers * delayMs / 1000)}s total)? WhatsApp puede bloquear el número si el envío es muy rápido.`)) return;
   const btn = document.getElementById('broadcast-btn');
   const status = document.getElementById('broadcast-status');
-  const delayMs = parseInt(document.getElementById('broadcast-delay').value) || 500;
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
   status.textContent = 'Enviando...'; status.style.color = 'var(--muted)';
   try {
