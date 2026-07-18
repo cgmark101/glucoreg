@@ -7,8 +7,9 @@ export async function buildWeeklyReport(
   username: string
 ): Promise<string> {
   const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+  const today = new Date().toISOString().slice(0, 10);
 
-  const [glucoseStats, bpStats] = await Promise.all([
+  const [glucoseStats, bpStats, glucoseDays, bpDays, streak] = await Promise.all([
     db.prepare(`
       SELECT COUNT(*) as total, AVG(value) as avg,
         SUM(CASE WHEN value >= 70 AND value <= 100 THEN 1 ELSE 0 END) as fasting_in_range
@@ -19,7 +20,37 @@ export async function buildWeeklyReport(
       SELECT COUNT(*) as total, AVG(systolic) as sys_avg, AVG(diastolic) as dia_avg
       FROM blood_pressure WHERE user_id = ? AND recorded_at >= ?
     `).bind(userId, weekAgo).first<{ total: number; sys_avg: number | null; dia_avg: number | null }>(),
+
+    db.prepare(`
+      SELECT COUNT(DISTINCT date(recorded_at)) as days FROM readings
+      WHERE user_id = ? AND recorded_at >= ?
+    `).bind(userId, weekAgo).first<{ days: number }>(),
+
+    db.prepare(`
+      SELECT COUNT(DISTINCT date(recorded_at)) as days FROM blood_pressure
+      WHERE user_id = ? AND recorded_at >= ?
+    `).bind(userId, weekAgo).first<{ days: number }>(),
+
+    db.prepare(`
+      WITH dates AS (
+        SELECT date(recorded_at) as d FROM readings WHERE user_id = ?
+        UNION SELECT date(recorded_at) FROM blood_pressure WHERE user_id = ?
+      )
+      SELECT COUNT(*) as streak FROM dates WHERE d >= date('now', '-' || (
+        SELECT min(d) FROM (
+          SELECT julianday('now') - julianday(d) - row_number() OVER (ORDER BY d DESC) as gap
+          FROM (SELECT DISTINCT date(recorded_at) as d FROM readings WHERE user_id = ?
+            UNION SELECT DISTINCT date(recorded_at) FROM blood_pressure WHERE user_id = ?)
+        ) WHERE gap = 0
+      ) || ' days')
+    `).bind(userId, userId, userId, userId).first<{ streak: number }>(),
   ]);
+
+  const glucDays = glucoseDays?.days || 0;
+  const bpD = bpDays?.days || 0;
+  const combinedDays = new Set<number>();
+  const todayGluc = glucoseStats?.total || 0;
+  const currentStreak = streak?.streak || 0;
 
   let msg = `📊 *Resumen Semanal — GlucoReg*\n`;
   msg += `Hola *${username}*, acá están tus métricas de la última semana:\n\n`;
@@ -27,24 +58,38 @@ export async function buildWeeklyReport(
   if (glucoseStats && glucoseStats.total > 0) {
     const avg = Math.round(glucoseStats.avg ?? 0);
     msg += `🍬 *Glucosa:*\n`;
-    msg += `📈 ${glucoseStats.total} lecturas · Promedio ${avg} mg/dL\n`;
-    msg += glucoseStats.fasting_in_range > 0
-      ? `🌅 Ayunas en rango: ${glucoseStats.fasting_in_range} vez/ces\n`
-      : '';
+    msg += `📈 ${glucoseStats.total} lecturas en ${glucDays} día(s) · Promedio ${avg} mg/dL\n`;
+    if (glucoseStats.fasting_in_range > 0) {
+      msg += `🌅 Ayunas en rango: ${glucoseStats.fasting_in_range} vez/ces\n`;
+    }
+    if (glucDays < 7) {
+      msg += `⚠️ Sin registro ${7 - glucDays} día(s) esta semana\n`;
+    }
+  } else {
+    msg += `🍬 *Glucosa:* sin lecturas esta semana\n`;
   }
 
   if (bpStats && bpStats.total > 0) {
     const sys = Math.round(bpStats.sys_avg ?? 0);
     const dia = Math.round(bpStats.dia_avg ?? 0);
-    msg += `💓 *Presión Arterial:*\n`;
-    msg += `📈 ${bpStats.total} lecturas · ${sys}/${dia} mmHg\n`;
+    msg += `\n💓 *Presión Arterial:*\n`;
+    msg += `📈 ${bpStats.total} mediciones en ${bpD} día(s) · ${sys}/${dia} mmHg\n`;
+    if (bpD < 7) {
+      msg += `⚠️ Sin registro ${7 - bpD} día(s) esta semana\n`;
+    }
+  } else {
+    msg += `\n💓 *Presión Arterial:* sin mediciones esta semana\n`;
+  }
+
+  if (currentStreak > 0) {
+    msg += `\n🔥 Racha actual: ${currentStreak} día(s) seguidos`;
   }
 
   if (!glucoseStats?.total && !bpStats?.total) {
-    msg += `📭 No registraste lecturas esta semana.\n`;
+    msg += `\n📭 No registraste nada esta semana.\n`;
     msg += `¡Animate a registrar para ver tu evolución!\n`;
   } else {
-    msg += `\n¡Seguí así! 💪 Cuidar tu salud es el mejor hábito.`;
+    msg += `\n\n¡Seguí así! 💪 Cuidar tu salud es el mejor hábito.`;
   }
 
   return msg;
