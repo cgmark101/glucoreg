@@ -6,7 +6,7 @@
 <title>GlucoReg — Admin</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/style.css?v=4">
+<link rel="stylesheet" href="/style.css?v=5">
 <link rel="apple-touch-icon" href="/icon.svg">
 </head>
 <body>
@@ -30,6 +30,7 @@
       <button class="admin-nav-btn active" data-section="dashboard" onclick="switchSection('dashboard')">📊 Dashboard</button>
       <button class="admin-nav-btn" data-section="users" onclick="switchSection('users')">👥 Usuarios</button>
       <button class="admin-nav-btn" data-section="broadcast" onclick="switchSection('broadcast')">📢 Broadcast</button>
+      <button class="admin-nav-btn" data-section="logs" onclick="switchSection('logs')">📋 Logs</button>
     </div>
     <div class="admin-content">
       <div id="section-dashboard" class="admin-section active">
@@ -42,6 +43,10 @@
       </div>
       <div id="section-broadcast" class="admin-section">
         <div id="broadcast-content"></div>
+      </div>
+      <div id="section-logs" class="admin-section">
+        <div id="logs-loading" style="text-align:center;padding:32px;color:var(--muted)"><span class="spinner"></span> Cargando...</div>
+        <div id="logs-content"></div>
       </div>
     </div>
   </div>
@@ -70,13 +75,19 @@ let editingUser = null;
 let usersData = [];
 let currentSection = 'dashboard';
 
-function switchSection(section) {
+async function switchSection(section) {
   currentSection = section;
   document.querySelectorAll('.admin-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.section === section));
   document.querySelectorAll('.admin-section').forEach(s => s.classList.toggle('active', s.id === 'section-' + section));
   if (section === 'dashboard' && !document.getElementById('dash-content').innerHTML) loadDashboard();
   if (section === 'users' && !document.getElementById('admin-content').innerHTML) loadAdmin();
-  if (section === 'broadcast' && !document.getElementById('broadcast-content').innerHTML) initBroadcast();
+  if (section === 'broadcast') {
+    if (!document.getElementById('broadcast-content').innerHTML) {
+      if (usersData.length === 0) await loadAdmin();
+      initBroadcast();
+    }
+  }
+  if (section === 'logs') loadLogs();
 }
 
 function closeModal() { document.getElementById('modal').classList.remove('show'); }
@@ -235,6 +246,42 @@ function initBroadcast() {
       <div class="broadcast-status" id="broadcast-status"></div>
     </div>
   `;
+}
+
+async function loadLogs(page) {
+  page = page || 0;
+  document.getElementById('logs-loading').style.display = 'block';
+  document.getElementById('logs-content').innerHTML = '';
+  try {
+    const res = await fetch(API + '/admin/logs?page=' + page, { headers:{'Authorization':'Bearer '+token} });
+    const data = await res.json();
+    if (!res.ok) { document.getElementById('logs-loading').textContent = 'Error: ' + (data.error||'desconocido'); return; }
+    document.getElementById('logs-loading').style.display = 'none';
+    const logs = data.logs || [];
+    const totalPages = Math.ceil((data.total || 0) / data.limit);
+    document.getElementById('logs-content').innerHTML = `
+      <div class="section-title">Auditoría (${data.total} registros)</div>
+      ${logs.length === 0 ? '<div class="empty-state" style="padding:24px"><p>Sin registros aún</p></div>' : ''}
+      ${logs.map(l => `
+        <div class="metric-row" style="margin-bottom:4px;padding:12px 16px">
+          <div class="info">
+            <div class="value" style="font-size:.85rem">
+              <span style="color:var(--accent)">${l.action}</span>
+              <span style="color:var(--muted);font-weight:400;font-size:.8rem">— ${l.username}</span>
+            </div>
+            <div class="sub">${l.detail || ''}</div>
+            <div class="sub" style="margin-top:2px;font-size:.7rem;color:var(--surface2)">${l.created_at}</div>
+          </div>
+        </div>
+      `).join('')}
+      ${totalPages > 1 ? `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
+        <button class="btn btn-outline" onclick="loadLogs(${page - 1})" style="width:auto;padding:8px 16px;font-size:.85rem" ${page === 0 ? 'disabled' : ''}>← Anterior</button>
+        <span style="font-size:.85rem;color:var(--muted)">Página ${page + 1} de ${totalPages}</span>
+        <button class="btn btn-outline" onclick="loadLogs(${page + 1})" style="width:auto;padding:8px 16px;font-size:.85rem" ${page + 1 >= totalPages ? 'disabled' : ''}>Siguiente →</button>
+      </div>` : ''}
+    `;
+  } catch(e) { document.getElementById('logs-loading').textContent = 'Error de conexión'; }
 }
 
 async function sendBroadcast() {

@@ -3,6 +3,7 @@ import type { D1Database } from '@cloudflare/workers-types';
 import { getDb } from '../db/client';
 import { authMiddleware, getUser } from '../middleware/auth';
 import { sendWhatsApp } from '../lib/waha';
+import { auditLog, ensureLogTable } from '../lib/logger';
 
 type Bindings = { DB: D1Database; WAHA_API_KEY: string; WAHA_BASE_URL?: string };
 
@@ -58,6 +59,10 @@ admin.patch('/users/:id', async (c) => {
 
   const result = await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).bind(...vals as any).run();
   if (result.meta.changes === 0) return c.json({ error: 'User not found', code: 404 }, 404);
+
+  const target = await db.prepare('SELECT username FROM users WHERE id = ?').bind(id).first<{ username: string }>();
+  await auditLog(db, user.sub, user.username, 'admin.user.update', `Usuario #${id} (${target?.username || '?'}) modificado por ${user.username}`);
+
   return c.json({ message: 'Usuario actualizado' });
 });
 
@@ -69,10 +74,14 @@ admin.delete('/users/:id', async (c) => {
   const user = getUser(c);
   if (id === user.sub) return c.json({ error: 'No puedes eliminarte a ti mismo', code: 400 }, 400);
 
+  const target = await db.prepare('SELECT username FROM users WHERE id = ?').bind(id).first<{ username: string }>();
   await db.prepare('DELETE FROM readings WHERE user_id = ?').bind(id).run();
   await db.prepare('DELETE FROM blood_pressure WHERE user_id = ?').bind(id).run();
   const result = await db.prepare('DELETE FROM users WHERE id = ?').bind(id).run();
   if (result.meta.changes === 0) return c.json({ error: 'User not found', code: 404 }, 404);
+
+  await auditLog(db, user.sub, user.username, 'admin.user.delete', `Usuario #${id} (${target?.username || '?'}) eliminado por ${user.username}`);
+
   return c.json({ message: 'Usuario y todos sus datos eliminados' });
 });
 
@@ -102,6 +111,11 @@ admin.post('/broadcast', async (c) => {
     }
   }
 
+  const user = getUser(c);
+  await auditLog(db, user.sub, user.username, 'admin.broadcast',
+    `Broadcast a ${users.results.length} usuario(s): ${sent} enviados, ${failed} fallidos. Delay: ${baseDelay}ms`
+  );
+
   return c.json({
     message: `Broadcast enviado: ${sent} enviados, ${failed} fallidos`,
     total: users.results.length,
@@ -109,6 +123,23 @@ admin.post('/broadcast', async (c) => {
     failed,
     delay_ms: baseDelay,
   });
+});
+
+admin.get('/logs', async (c) => {
+  if (!(await checkAdmin(c))) return;
+  const db = getDb(c.env);
+  await ensureLogTable(db);
+  const page = parseInt(c.req.query('page') || '0');
+  const limit = 50;
+  const offset = page * limit;
+
+  const logs = await db.prepare(
+    'SELECT * FROM audit_logs ORDER BY id DESC LIMIT ? OFFSET ?'
+  ).bind(limit, offset).all();
+
+  const count = await db.prepare('SELECT COUNT(*) as c FROM audit_logs').first<{ c: number }>();
+
+  return c.json({ logs: logs.results, total: count?.c || 0, page, limit });
 });
 
 export default admin;
