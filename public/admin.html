@@ -74,8 +74,6 @@ checkAuth();
 let editingUser = null;
 let usersData = [];
 let currentSection = 'dashboard';
-let logsPollTimer = null;
-
 async function switchSection(section) {
   currentSection = section;
   document.querySelectorAll('.admin-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.section === section));
@@ -88,13 +86,7 @@ async function switchSection(section) {
       initBroadcast();
     }
   }
-  if (section === 'logs') {
-    clearInterval(logsPollTimer);
-    loadLogs(0);
-    logsPollTimer = setInterval(() => { if (currentSection === 'logs') loadLogs(0); }, 5000);
-  } else {
-    clearInterval(logsPollTimer);
-  }
+  if (section === 'logs') loadLogs(0);
 }
 
 function closeModal() { document.getElementById('modal').classList.remove('show'); }
